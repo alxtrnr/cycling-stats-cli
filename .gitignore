@@ -1,8 +1,13 @@
+cd ~/python_projects/cycling_stats
+
+# Edit your .gitignore to be more specific
+cat > .gitignore << 'EOF'
 # Personal Data & API Keys
 credentials.json
 .env
-*.env
-.env.*
+.env.local
+.env.production
+.env.development
 
 # API Tokens & Cache
 .rwgps_token
@@ -79,3 +84,6 @@ Thumbs.db
 NOTES.md
 TODO.md
 personal_*
+EOF
+*.ps
+*.pdf
