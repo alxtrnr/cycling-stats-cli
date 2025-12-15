@@ -9,8 +9,8 @@ This CLI application helps cyclists analyze their Ride With GPS (RWGPS) data to 
 - Display yearly, monthly, and ride distribution statistics.
 - Track cycling goals: distance, ride count, elevation, time, and frequency.
 - Manage goals via CLI commands (add, edit, list, delete, progress).
-- Supports miles and kilometers with easy toggling.
-- Caches data for efficient processing.
+- Supports miles and kilometers with easy toggling; goal progress auto-converts targets/results to the selected display unit (distance and elevation).
+- Caches data for efficient processing (single shared cache file, legacy per-unit caches auto-migrate).
 - Secure and reusable user authentication.
 
 ## Installation
@@ -127,7 +127,7 @@ python cli.py goal delete --id <goal_id>
 
 - Place your RWGPS API key in environment variable `RWGPS_API_KEY`.
 - Default unit is `miles`; can be changed in `.unit_preference` file or via `unit` CLI command.
-- Cache file is stored per unit as `<cache_file>_<unit>.pkl` to enable multi-unit support.
+- Cache uses a single shared file `trips_cache.pkl`; legacy per-unit caches are migrated automatically.
 
 ## Authentication
 
@@ -150,6 +150,14 @@ python cli.py summary
 python cli.py ytd --unit km
 python cli.py goal add --type distance --target 2000 --unit km --start 2025-01-01 --end 2025-12-31
 python cli.py goal progress --all
+
+## Tests
+
+Pure logic tests (no network/API calls):
+
+```bash
+python -m unittest discover -s tests -p "test_*.py"
+```
 ```
 
 ## Contribution

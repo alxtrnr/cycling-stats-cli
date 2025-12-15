@@ -48,9 +48,9 @@ def setup_logging():
     logging.getLogger("urllib3").setLevel(logging.WARNING)
 
 
-def update_cache(cache_file: str, client: RWGPSClient, unit: str = 'miles') -> List[dict]:
-    """Update cache with only new rides if needed."""
-    cached_data = load_cached_data(cache_file, unit)
+def update_cache(cache_file: str, client: RWGPSClient) -> List[dict]:
+    """Update cache with only new rides if needed (unit-agnostic)."""
+    cached_data = load_cached_data(cache_file)
 
     if not cached_data:
         logging.info("No cache found. Fetching all trips...")
@@ -58,7 +58,7 @@ def update_cache(cache_file: str, client: RWGPSClient, unit: str = 'miles') -> L
         cache_data({
             'trips': trips,
             'timestamp': time.time()
-        }, cache_file, unit)
+        }, cache_file)
         return trips
 
     cached_trips = cached_data.get('trips', [])
@@ -70,7 +70,7 @@ def update_cache(cache_file: str, client: RWGPSClient, unit: str = 'miles') -> L
         cache_data({
             'trips': trips,
             'timestamp': time.time()
-        }, cache_file, unit)
+        }, cache_file)
         return trips
 
     # Check for new trips
@@ -89,7 +89,7 @@ def update_cache(cache_file: str, client: RWGPSClient, unit: str = 'miles') -> L
             cache_data({
                 'trips': all_trips,
                 'timestamp': time.time()
-            }, cache_file, unit)
+            }, cache_file)
             logging.info(f"Added {len(new_trips)} new trips to cache")
             return all_trips
 
@@ -144,15 +144,13 @@ def main(unit: str = DEFAULT_UNIT, refresh_cache: bool = False):
 
         client = RWGPSClient(API_KEY, email, password)
 
-        # Handle cache with respect to refresh flag
-        cache_file = f"{CACHE_FILE.split('.')[0]}_{unit}.pkl"
+        # Handle cache with respect to refresh flag (shared cache)
+        cache_file = CACHE_FILE
 
         if refresh_cache and os.path.exists(cache_file):
             os.remove(cache_file)
             logging.info("Cache cleared. Fetching fresh data...")
 
-        trips = update_cache(CACHE_FILE, client, unit)
-        distances = process_trips(trips, unit)
         trips = update_cache(CACHE_FILE, client)
         distances = process_trips(trips, unit)
         yearly_eddington = calculate_yearly_eddington(trips, unit)

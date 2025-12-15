@@ -3,34 +3,35 @@
 import pickle
 import logging
 import os
-from typing import Any, Optional
+from typing import Any, Optional, List, Tuple
 
 
-def cache_data(data: Any, filename: str, unit: str = 'miles') -> None:
-    """Cache data to a file with unit-specific naming."""
-    unit_filename = f"{filename.split('.')[0]}_{unit}.pkl"
+def _legacy_cache_files(filename: str) -> List[str]:
+    """Return legacy unit-specific cache filenames for migration."""
+    base = filename.split('.')[0]
+    return [f"{base}_miles.pkl", f"{base}_km.pkl"]
+
+
+def _load_cache_file(path: str) -> Optional[Any]:
+    """Load a cache file safely, logging failures."""
     try:
-        with open(unit_filename, 'wb') as f:
+        with open(path, 'rb') as f:
+            return pickle.load(f)
+    except FileNotFoundError:
+        return None
+    except Exception as e:
+        logging.error(f"Failed to load cache file {path}: {e}")
+        return None
+
+
+def cache_data(data: Any, filename: str) -> None:
+    """Cache data to a single shared file (unit-agnostic)."""
+    try:
+        with open(filename, 'wb') as f:
             pickle.dump(data, f)
-        logging.info(f"Data cached to {unit_filename}")
+        logging.info(f"Data cached to {filename}")
     except Exception as e:
         logging.error(f"Failed to cache data: {str(e)}")
-
-
-def load_cached_data(filename: str, unit: str = 'miles') -> Optional[Any]:
-    """Load cached data from a unit-specific file."""
-    unit_filename = f"{filename.split('.')[0]}_{unit}.pkl"
-    try:
-        with open(unit_filename, 'rb') as f:
-            data = pickle.load(f)
-            logging.info(f"Loaded cached data from {unit_filename}")
-            return data
-    except FileNotFoundError:
-        logging.info(f"No cache file found: {unit_filename}")
-        return None
-    except Exception as e:
-        logging.error(f"Failed to load cached data: {str(e)}")
-        return None
 
 
 def save_token(token: str) -> None:
@@ -64,6 +65,48 @@ def load_token() -> Optional[str]:
         logging.error(f"Failed to load token: {str(e)}")
 
     return None
+
+
+def load_cached_data(filename: str) -> Optional[Any]:
+    """
+    Load cached data from the shared cache file.
+    Falls back to legacy unit-specific caches and migrates them if present.
+    """
+    candidates: List[Tuple[int, float, str, Any]] = []  # (trip_count, timestamp, path, data)
+
+    # Current shared cache
+    data = _load_cache_file(filename)
+    if data is not None:
+        trip_count = len(data.get('trips', [])) if isinstance(data, dict) else 0
+        timestamp = float(data.get('timestamp', 0)) if isinstance(data, dict) else 0.0
+        candidates.append((trip_count, timestamp, filename, data))
+
+    # Legacy caches (miles/km)
+    for legacy_file in _legacy_cache_files(filename):
+        legacy_data = _load_cache_file(legacy_file)
+        if legacy_data is not None:
+            trip_count = len(legacy_data.get('trips', [])) if isinstance(legacy_data, dict) else 0
+            timestamp = float(legacy_data.get('timestamp', 0)) if isinstance(legacy_data, dict) else 0.0
+            candidates.append((trip_count, timestamp, legacy_file, legacy_data))
+
+    if not candidates:
+        logging.info(f"No cache file found: {filename}")
+        return None
+
+    # Pick the cache with the most trips; tie-breaker is latest timestamp
+    best_count, best_ts, best_path, best_data = max(candidates, key=lambda x: (x[0], x[1]))
+
+    # If best is legacy or differs from current shared cache, migrate
+    if best_path != filename:
+        logging.info(
+            f"Migrating cache from {best_path} to {filename} "
+            f"(trips={best_count}, ts={best_ts})"
+        )
+        cache_data(best_data, filename)
+    else:
+        logging.info(f"Loaded cached data from {filename} (trips={best_count})")
+
+    return best_data
 
 
 def save_preferred_unit(unit: str) -> None:
@@ -101,27 +144,24 @@ def get_preferred_unit() -> str:
     return DEFAULT_UNIT
 
 
-def check_cache_status(cache_file: str, unit: str = 'miles') -> bool:
-    """Check if cache exists for the specified unit."""
-    unit_filename = f"{cache_file.split('.')[0]}_{unit}.pkl"
-    return os.path.exists(unit_filename)
+def check_cache_status(cache_file: str) -> bool:
+    """Check if the shared cache exists."""
+    return os.path.exists(cache_file)
 
 
-def get_cache_info(cache_file: str, unit: str = 'miles') -> dict:
-    """Get information about the cache file."""
-    unit_filename = f"{cache_file.split('.')[0]}_{unit}.pkl"
-
+def get_cache_info(cache_file: str) -> dict:
+    """Get information about the shared cache file."""
     info = {
-        'exists': os.path.exists(unit_filename),
-        'filename': unit_filename,
+        'exists': os.path.exists(cache_file),
+        'filename': cache_file,
         'size': 0,
         'last_modified': None
     }
 
     if info['exists']:
         try:
-            info['size'] = os.path.getsize(unit_filename)
-            info['last_modified'] = os.path.getmtime(unit_filename)
+            info['size'] = os.path.getsize(cache_file)
+            info['last_modified'] = os.path.getmtime(cache_file)
         except Exception as e:
             logging.error(f"Failed to get cache file info: {str(e)}")
 

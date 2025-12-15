@@ -21,7 +21,7 @@ from auth import get_credentials
 from goal_tracker import (
     GoalSettings, GoalType,
     calculate_goal_progress, calculate_goal_progress_v2,
-    format_goal_display
+    format_goal_display, get_goal_display_unit
 )
 
 
@@ -206,7 +206,7 @@ def display_monthly(metrics: Dict, unit: str = 'miles') -> None:
 def display_status(unit: str = 'miles') -> None:
     print(f"\n=== CURRENT SETTINGS ===")
     print(f"Distance unit: {unit}")
-    cache_file = f"{CACHE_FILE.split('.')[0]}_{unit}.pkl"
+    cache_file = CACHE_FILE
     print(f"Cache file: {cache_file}")
 
     if os.path.exists(cache_file):
@@ -310,16 +310,18 @@ def handle_goal_commands(args, trips: List[dict], unit: str) -> None:
                     if i > 0:
                         print("\n" + "="*50 + "\n")
                     progress = calculate_goal_progress_v2(goal, trips, unit)
+                    display_unit = get_goal_display_unit(goal, unit)
                     print(f"Goal: {goal.title} ({goal.goal_id})")
-                    print(format_goal_display(progress, goal.unit or unit))
+                    print(format_goal_display(progress, display_unit))
 
         elif args.id:
             all_goals = settings.list_goals()
             goal = next((g for g in all_goals if g.goal_id == args.id), None)
             if goal:
                 progress = calculate_goal_progress_v2(goal, trips, unit)
+                display_unit = get_goal_display_unit(goal, unit)
                 print(f"Goal: {goal.title} ({goal.goal_id})")
-                print(format_goal_display(progress, goal.unit or unit))
+                print(format_goal_display(progress, display_unit))
             else:
                 print(f"Goal {args.id} not found.")
         else:
@@ -477,12 +479,12 @@ def main() -> None:
     client = RWGPSClient(API_KEY, email, password)
 
     # Handle cache
-    cache_file = f"{CACHE_FILE.split('.')[0]}_{unit}.pkl"
+    cache_file = CACHE_FILE
     if args.refresh and os.path.exists(cache_file):
         os.remove(cache_file)
         print("Cache cleared. Fetching fresh data...")
 
-    trips = update_cache(CACHE_FILE, client, unit)
+    trips = update_cache(CACHE_FILE, client)
     distances = process_trips(trips, unit)
     yearly_eddington = calculate_yearly_eddington(trips, unit)
     stats = calculate_statistics(distances, unit)

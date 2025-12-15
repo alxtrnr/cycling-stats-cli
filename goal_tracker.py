@@ -22,6 +22,10 @@ getcontext().prec = 28
 # Conversion constants (reusing from existing app)
 METERS_TO_MILES = Decimal("0.000621371192237334")
 METERS_TO_KM = Decimal("0.001")
+KM_TO_MILES = Decimal("0.621371192237334")
+MILES_TO_KM = Decimal("1.609344")
+METERS_TO_FEET = Decimal("3.280839895013123")
+FEET_TO_METERS = Decimal("0.3048")
 
 
 class GoalType(str, Enum):
@@ -345,6 +349,31 @@ def _sum_distance(trips: list[Dict], unit: str) -> Decimal:
     return total
 
 
+def _convert_distance(value: Decimal, from_unit: str, to_unit: str) -> Decimal:
+    """Convert a distance value between km and miles."""
+    if from_unit == to_unit:
+        return value
+    if from_unit == 'km' and to_unit == 'miles':
+        return value * KM_TO_MILES
+    if from_unit == 'miles' and to_unit == 'km':
+        return value * MILES_TO_KM
+    # Fallback: if units are missing/unknown, return original
+    return value
+
+
+def get_goal_display_unit(goal: Goal, distance_unit_for_display: str) -> str:
+    """Determine the display unit for a goal based on goal type and selected distance unit."""
+    if goal.type == GoalType.DISTANCE:
+        return distance_unit_for_display
+    if goal.type == GoalType.ELEVATION:
+        return 'ft' if distance_unit_for_display == 'miles' else 'm'
+    if goal.type in (GoalType.RIDE_COUNT, GoalType.FREQUENCY):
+        return 'rides'
+    if goal.type == GoalType.TIME:
+        return 'h'
+    return goal.unit or distance_unit_for_display
+
+
 def _sum_elevation(trips: list[Dict], unit: ElevationUnit) -> Decimal:
     """Sum elevation gain from trips."""
     total_m = Decimal('0')
@@ -356,8 +385,19 @@ def _sum_elevation(trips: list[Dict], unit: ElevationUnit) -> Decimal:
             continue
 
     if unit == ElevationUnit.FEET:
-        return total_m * Decimal('3.280839895013123')
+        return total_m * METERS_TO_FEET
     return total_m
+
+
+def _convert_elevation(value: Decimal, from_unit: str, to_unit: str) -> Decimal:
+    """Convert elevation between meters and feet."""
+    if from_unit == to_unit:
+        return value
+    if from_unit == 'm' and to_unit == 'ft':
+        return value * METERS_TO_FEET
+    if from_unit == 'ft' and to_unit == 'm':
+        return value * FEET_TO_METERS
+    return value
 
 
 def _sum_time_hours(trips: list[Dict]) -> Decimal:
@@ -385,15 +425,25 @@ def calculate_goal_progress_v2(goal: Goal, trips: List[Dict], distance_unit_for_
     days_remaining = max(days_total - days_passed, 0)
     percent_elapsed = (days_passed / days_total) * 100 if days_total > 0 else 100.0
 
+    display_unit = distance_unit_for_display or goal.unit or 'miles'
+
+    target = goal.target
+
     if goal.type == GoalType.DISTANCE:
-        current = _sum_distance(window_trips, goal.unit or distance_unit_for_display)
-        unit = goal.unit or distance_unit_for_display
+        base_unit = goal.unit or display_unit
+        current = _sum_distance(window_trips, display_unit)
+        target = _convert_distance(goal.target, base_unit, display_unit)
+        unit = display_unit
     elif goal.type == GoalType.RIDE_COUNT:
         current = Decimal(str(_count_rides(window_trips)))
         unit = 'rides'
     elif goal.type == GoalType.ELEVATION:
-        unit = goal.unit or 'm'
-        current = _sum_elevation(window_trips, ElevationUnit(unit))
+        display_elev_unit = get_goal_display_unit(goal, display_unit)
+        base_unit = goal.unit or display_elev_unit
+        current_base = _sum_elevation(window_trips, ElevationUnit(base_unit))
+        current = _convert_elevation(current_base, base_unit, display_elev_unit)
+        target = _convert_elevation(goal.target, base_unit, display_elev_unit)
+        unit = display_elev_unit
     elif goal.type == GoalType.TIME:
         current = _sum_time_hours(window_trips)
         unit = 'h'
@@ -404,7 +454,9 @@ def calculate_goal_progress_v2(goal: Goal, trips: List[Dict], distance_unit_for_
         current = Decimal('0')
         unit = ''
 
-    target = goal.target
+    # target may have been converted above for distance/elevation
+    if goal.type not in (GoalType.DISTANCE, GoalType.ELEVATION):
+        target = goal.target
     pct_completed = float((current / target) * 100) if target > 0 else 0.0
     pace_diff = pct_completed - percent_elapsed
 

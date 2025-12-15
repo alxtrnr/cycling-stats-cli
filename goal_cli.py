@@ -15,7 +15,7 @@ from client import RWGPSClient
 from config import API_KEY, CACHE_FILE
 from goal_tracker import (
     GoalSettings, GoalType, calculate_goal_progress_v2,
-    format_goal_display, calculate_goal_progress
+    format_goal_display, calculate_goal_progress, get_goal_display_unit
 )
 from main import update_cache
 from utils import get_preferred_unit, save_preferred_unit
@@ -179,9 +179,10 @@ def handle_add_goal(args, display_unit: str) -> None:
             try:
                 email, password = get_credentials()
                 client = RWGPSClient(API_KEY, email, password)
-                trips = update_cache(CACHE_FILE, client, display_unit)
+                trips = update_cache(CACHE_FILE, client)
                 progress = calculate_goal_progress_v2(goal, trips, display_unit)
-                print(format_goal_display(progress, goal.unit))
+                display_goal_unit = get_goal_display_unit(goal, display_unit)
+                print(format_goal_display(progress, display_goal_unit))
             except Exception as e:
                 print(f"Could not fetch progress: {e}")
 
@@ -199,7 +200,7 @@ def handle_show_progress(args, unit: str, refresh: bool = False) -> None:
 
         if refresh:
             print("Refreshing ride data...")
-        trips = update_cache(CACHE_FILE, client, unit)
+        trips = update_cache(CACHE_FILE, client)
 
         # Get goals to show
         settings = GoalSettings()
@@ -230,7 +231,8 @@ def handle_show_progress(args, unit: str, refresh: bool = False) -> None:
 
             progress = calculate_goal_progress_v2(goal, trips, unit)
             print(f"Goal: {goal.title} ({goal.goal_id})")
-            print(format_goal_display(progress, goal.unit or unit))
+            display_goal_unit = get_goal_display_unit(goal, unit)
+            print(format_goal_display(progress, display_goal_unit))
 
     except Exception as e:
         print(f"❌ Error fetching progress: {e}")
@@ -403,7 +405,7 @@ def handle_show_progress_legacy(unit: str, refresh: bool = False) -> None:
 
         if refresh:
             print("Refreshing ride data...")
-        trips = update_cache(CACHE_FILE, client, unit)
+        trips = update_cache(CACHE_FILE, client)
 
         progress = calculate_goal_progress(goal_distance, trips, unit)
         print(format_goal_display(progress, unit))

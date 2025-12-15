@@ -6,6 +6,7 @@ import json
 import logging
 import sys
 import time
+import math
 import getpass
 from datetime import datetime
 from decimal import Decimal
@@ -22,6 +23,7 @@ from utils import load_token, save_token
 
 class RWGPSClient:
     """Client for interacting with the Ride With GPS API."""
+    PER_PAGE = 50
 
     def __init__(self, api_key: str, email: str = None, password: str = None):
         self.base_url = "https://ridewithgps.com/api/v1"
@@ -201,7 +203,7 @@ class RWGPSClient:
                 params={
                     'page': page,
                     'version': 2,
-                    'per_page': 50,
+                    'per_page': self.PER_PAGE,
                     'sub_format': 'detail'
                 },
                 timeout=30
@@ -282,7 +284,7 @@ class RWGPSClient:
                 params={
                     'page': 1,
                     'version': 2,
-                    'per_page': 50,
+                    'per_page': self.PER_PAGE,
                     'sub_format': 'detail'
                 },
                 timeout=30
@@ -297,31 +299,50 @@ class RWGPSClient:
                 logging.warning(f"No trips found. Response keys: {list(data.keys())}")
                 return []
 
+            # Add first page immediately to avoid refetching it
+            first_page_trips = data.get(trips_key, []) or []
+            all_trips.extend(first_page_trips)
+
             # Extract pagination info
             meta = data.get('meta', {})
             pagination = meta.get('pagination', {})
-            total_pages = pagination.get('page_count', 1)
-            total_rides = pagination.get('record_count', len(data.get(trips_key, [])))
+            total_rides = pagination.get('record_count', len(first_page_trips))
+
+            # Prefer a calculation based on the requested per_page to avoid under-fetching
+            total_pages_meta = pagination.get('page_count', 1) or 1
+            total_pages = max(
+                math.ceil(total_rides / self.PER_PAGE) if total_rides else 1,
+                total_pages_meta
+            )
 
             # Log available fields from first page
-            if data.get(trips_key):
-                self._log_available_fields(data[trips_key])
+            if first_page_trips:
+                self._log_available_fields(first_page_trips)
 
             logging.info(f"Fetching {total_rides} rides across {total_pages} pages")
 
             with tqdm(total=total_rides, desc="Retrieving rides", unit=" rides") as pbar:
-                for page in range(1, min(total_pages + 1, 100)):  # Limit to 100 pages max
+                # We already grabbed the first page above
+                pbar.update(len(first_page_trips))
+
+                for page in range(2, min(total_pages + 1, 500)):  # reasonable upper bound
                     try:
                         trips = self.get_trips_page(page)
                         all_trips.extend(trips)
                         pbar.update(len(trips))
 
                         if not trips:  # No more trips available
+                            logging.warning(f"No trips returned on page {page}; stopping early.")
                             break
 
                     except Exception as e:
                         logging.error(f"Error on page {page}: {str(e)}")
                         continue
+
+            if total_rides and len(all_trips) < total_rides:
+                logging.warning(
+                    f"Expected {total_rides} rides but only retrieved {len(all_trips)}."
+                )
 
             logging.info(f"Retrieved {len(all_trips)} rides")
             return all_trips
