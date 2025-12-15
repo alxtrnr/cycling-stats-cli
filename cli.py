@@ -429,6 +429,7 @@ def display_goal_summary(trips: List[dict], unit: str) -> None:
                 for goal in active_goals[:3]:
                     try:
                         progress = calculate_goal_progress_v2(goal, trips, unit)
+                        display_unit = get_goal_display_unit(goal, unit)
                         pct = progress.percent_goal_completed
                         if progress.status == "on_track":
                             status_icon = "🟢"
@@ -436,7 +437,7 @@ def display_goal_summary(trips: List[dict], unit: str) -> None:
                             status_icon = "🚀"
                         else:
                             status_icon = "⚠️"
-                        print(f"{status_icon} {goal.title}: {progress.current_distance:,.0f}/{goal.target:,.0f} {goal.unit or unit} ({pct:.1f}%)")
+                        print(f"{status_icon} {goal.title}: {progress.current_distance:,.0f}/{progress.goal_distance:,.0f} {display_unit} ({pct:.1f}%)")
                     except Exception as e:
                         print(f"⚠️ {goal.title}: Error calculating progress - {str(e)}")
 
